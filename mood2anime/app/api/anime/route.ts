@@ -11,10 +11,16 @@ export async function GET(request: Request) {
 
   try {
     const apiUrl = `https://api.jikan.moe/v4/anime?genres=${genreId}&order_by=popularity&sort=asc&min_score=6&limit=25`
-    console.log('Fetching from:', apiUrl)
     const response = await fetch(apiUrl)
+    
+    if (!response.ok) {
+      if (response.status === 429) {
+        return NextResponse.json({ error: 'API rate limit exceeded' }, { status: 429 })
+      }
+      throw new Error('API response was not ok')
+    }
+    
     const data = await response.json()
-    console.log('API Response:', data)
     return NextResponse.json(data)
   } catch (error) {
     console.error('Error fetching anime data:', error)

@@ -98,6 +98,9 @@ export default function Mood2Anime() {
     try {
       const response = await fetch(`/api/anime?genreId=${genreId}`)
       if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error('API rate limit exceeded. Please try again later.')
+        }
         throw new Error('Network response was not ok')
       }
       const data = await response.json()
@@ -131,7 +134,7 @@ export default function Mood2Anime() {
       }
     } catch (err) {
       console.error('Error in fetchAnimeByMood:', err)
-      setError("An error occurred while fetching anime data. Please try again later.")
+      setError(err instanceof Error ? err.message : "An error occurred while fetching anime data. Please try again later.")
     }
 
     setLoading(false)
