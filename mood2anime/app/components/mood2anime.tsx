@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -36,10 +36,8 @@ interface Anime {
     youtube_id: string
     url: string
   }
+  members: number // Add this line
 }
-
-// Proxy server URL to handle CORS issues
-const PROXY_URL = "https://cors-anywhere.herokuapp.com/"
 
 // Cache interface
 interface Cache {
@@ -60,17 +58,30 @@ export default function Mood2Anime() {
   // Cache expiration time (1 hour)
   const CACHE_EXPIRATION = 60 * 60 * 1000
 
-  useEffect(() => {
-    // Clean up expired cache entries
+  // Move the cache cleanup logic to a useCallback hook
+  const cleanupCache = useCallback(() => {
     const now = Date.now()
-    const newCache = { ...cache }
-    Object.keys(newCache).forEach((key) => {
-      if (now - newCache[Number(key)].timestamp > CACHE_EXPIRATION) {
-        delete newCache[Number(key)]
-      }
+    setCache(prevCache => {
+      const newCache = { ...prevCache }
+      Object.keys(newCache).forEach((key) => {
+        if (now - newCache[Number(key)].timestamp > CACHE_EXPIRATION) {
+          delete newCache[Number(key)]
+        }
+      })
+      return newCache
     })
-    setCache(newCache)
-  }, [cache])
+  }, [CACHE_EXPIRATION])
+
+  useEffect(() => {
+    // Run the cache cleanup when the component mounts
+    cleanupCache()
+
+    // Set up an interval to run the cleanup periodically
+    const intervalId = setInterval(cleanupCache, CACHE_EXPIRATION)
+
+    // Clear the interval when the component unmounts
+    return () => clearInterval(intervalId)
+  }, [cleanupCache])
 
   const fetchAnimeByMood = async (genreId: number) => {
     setLoading(true)
@@ -85,29 +96,41 @@ export default function Mood2Anime() {
     }
 
     try {
-      const response = await fetch(`${PROXY_URL}https://api.jikan.moe/v4/anime?genres=${genreId}&order_by=popularity&sort=desc&limit=20`)
+      const response = await fetch(`/api/anime?genreId=${genreId}`)
+      if (!response.ok) {
+        throw new Error('Network response was not ok')
+      }
       const data = await response.json()
+      console.log('Received data from API:', data)
 
       if (data.data && data.data.length > 0) {
-        const animeWithTrailers = data.data.filter((anime: Anime) => anime.trailer && anime.trailer.youtube_id)
-        if (animeWithTrailers.length > 0) {
-          setRecommendedAnime(animeWithTrailers)
+        // Filter anime with a minimum score of 6 and sort by popularity
+        const animeList = data.data
+          .filter((anime: Anime) => anime.score >= 6)
+          .sort((a: Anime, b: Anime) => b.members - a.members) // Sort by number of members (popularity)
+          .slice(0, 20) // Limit to top 20 most popular
+
+        console.log('Filtered anime list:', animeList)
+
+        if (animeList.length > 0) {
+          setRecommendedAnime(animeList)
           setCurrentAnimeIndex(0)
           // Update cache
           setCache((prevCache) => ({
             ...prevCache,
             [genreId]: {
-              data: animeWithTrailers,
+              data: animeList,
               timestamp: Date.now(),
             },
           }))
         } else {
-          setError("No anime with trailers found for this mood. Try again!")
+          setError("No popular anime found for this mood. Try a different mood!")
         }
       } else {
         setError("No anime found for this mood. Try a different mood!")
       }
     } catch (err) {
+      console.error('Error in fetchAnimeByMood:', err)
       setError("An error occurred while fetching anime data. Please try again later.")
     }
 
@@ -188,8 +211,26 @@ export default function Mood2Anime() {
                   transition={{ duration: 0.5 }}
                   className="mt-8 space-y-6"
                 >
+                  <h3 className="text-3xl font-bold text-purple-800 mb-4">{recommendedAnime[currentAnimeIndex].title}</h3>
+                  
+                  {/* YouTube Trailer */}
+                  {recommendedAnime[currentAnimeIndex].trailer && recommendedAnime[currentAnimeIndex].trailer.youtube_id ? (
+                    <div className="w-full h-[70vh] mb-6">
+                      <ReactPlayer
+                        url={`https://www.youtube.com/watch?v=${recommendedAnime[currentAnimeIndex].trailer.youtube_id}`}
+                        width="100%"
+                        height="100%"
+                        controls={true}
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-purple-100 p-6 rounded-lg shadow-md text-center mb-6 h-[70vh] flex items-center justify-center">
+                      <p className="text-purple-700 text-xl">No trailer available for this anime.</p>
+                    </div>
+                  )}
+
+                  {/* Anime Details */}
                   <div className="bg-purple-100 p-6 rounded-lg shadow-md">
-                    <h3 className="text-3xl font-bold text-purple-800 mb-4">{recommendedAnime[currentAnimeIndex].title}</h3>
                     <div className="flex flex-wrap gap-2 mb-4">
                       {recommendedAnime[currentAnimeIndex].genres.map((genre) => (
                         <Badge key={genre.name} variant="secondary" className="bg-purple-200 text-purple-800">
@@ -208,19 +249,15 @@ export default function Mood2Anime() {
                       <div>
                         <span className="font-semibold">Episodes:</span> {recommendedAnime[currentAnimeIndex].episodes}
                       </div>
+                      <div>
+                        <span className="font-semibold">Members:</span> {recommendedAnime[currentAnimeIndex].members.toLocaleString()}
+                      </div>
                       <div className="col-span-2">
                         <span className="font-semibold">Aired:</span> {recommendedAnime[currentAnimeIndex].aired.string}
                       </div>
                     </div>
                   </div>
-                  <div className="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden shadow-lg">
-                    <ReactPlayer
-                      url={`https://www.youtube.com/watch?v=${recommendedAnime[currentAnimeIndex].trailer.youtube_id}`}
-                      width="100%"
-                      height="100%"
-                      controls={true}
-                    />
-                  </div>
+                  {/* Navigation Buttons */}
                   <div className="flex justify-between items-center mt-4">
                     <Button onClick={handlePreviousAnime} variant="outline" className="flex items-center">
                       <ChevronLeft className="mr-2" /> Previous Anime
