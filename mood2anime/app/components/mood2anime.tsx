@@ -47,6 +47,7 @@ interface Cache {
   }
 }
 
+const CACHE_EXPIRATION = 60 * 60 * 1000 // 1 hour
 export default function Mood2Anime() {
   const [selectedMood, setSelectedMood] = useState<string | null>(null)
   const [recommendedAnime, setRecommendedAnime] = useState<Anime[]>([])
@@ -56,7 +57,7 @@ export default function Mood2Anime() {
   const [cache, setCache] = useState<Cache>({})
 
   // Cache expiration time (1 hour)
-  const CACHE_EXPIRATION = 60 * 60 * 1000
+ 
 
   // Move the cache cleanup logic to a useCallback hook
   const cleanupCache = useCallback(() => {
@@ -81,7 +82,7 @@ export default function Mood2Anime() {
 
     // Clear the interval when the component unmounts
     return () => clearInterval(intervalId)
-  }, [cleanupCache])
+  }, [cleanupCache, CACHE_EXPIRATION])
 
   const fetchAnimeByMood = async (genreId: number) => {
     setLoading(true)
